@@ -24,13 +24,15 @@
 
 -export([
 	 all_nodes/0,
-	 all_nodes/1
+	 all_nodes/1,
+	 all_providers/0
 	]).
 %%
 -export([
 %	 create_worker/1,
 %	 delete_worker/1,
-%	 load_provider/1,
+	 create_provider/2,
+	 delete_provider/1,
 %	 start/1,
 %	 stop/1,
 %	 unload/1,
@@ -52,6 +54,7 @@
 
 %% Record and Data
 -record(state, {
+		session_deployments,
 		connect_nodes
 	       }).
 
@@ -70,6 +73,36 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+-spec all_providers() -> [{Node :: node(),ProviderApp :: atom()}].
+
+all_providers()->
+    gen_server:call(?SERVER,{all_providers},infinity).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+-spec create_provider(ProviderSpec :: string(),HostName :: string()) -> 
+	  {ok,Id :: integer()}| {error,Reason :: term()}.
+
+create_provider(ProviderSpec,HostName)->
+    gen_server:call(?SERVER,{create_provider,ProviderSpec,HostName},infinity).
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+-spec delete_provider(Id :: integer())-> ok| {error,Reason :: term()}.
+
+delete_provider(Id)->
+    gen_server:call(?SERVER,{delete_provider,Id},infinity).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Create provider directory and starts the slave node 
@@ -158,7 +191,8 @@ init([]) ->
     ?LOG_NOTICE("Server started ",[]),
   
     {ok, #state{
-	   connect_nodes=ConnectNodes}}.
+	    session_deployments=[],
+	    connect_nodes=ConnectNodes}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -187,6 +221,38 @@ handle_call({all_nodes}, _From, State) ->
 handle_call({all_nodes,HostName}, _From, State) ->
     Reply = lib_oam:all_nodes(HostName,State#state.connect_nodes),
     {reply, Reply, State};
+
+handle_call({all_providers}, _From, State) ->
+    Reply = lib_oam:all_providers(State#state.connect_nodes),
+    {reply, Reply, State};
+
+handle_call({all_providers,HostName}, _From, State) ->
+    Reply = lib_oam:all_providers(HostName,State#state.connect_nodes),
+    {reply, Reply, State};
+
+handle_call({create_provider,ProviderSpec,HostName}, _From, State) ->
+    Reply = case lib_oam:create_provider(ProviderSpec,HostName,State#state.connect_nodes) of
+		{error,Reason}->
+		    NewState=State,
+		    {error,Reason};
+		{ok,Id,Node}->
+		    NewState=State#state{session_deployments=[{Id,Node,ProviderSpec,HostName}|State#state.session_deployments]},
+		    {ok,Id,Node}
+	    end,
+    {reply, Reply, NewState};
+
+
+handle_call({delete_provider,Id}, _From, State) ->
+    Reply = case lib_oam:delete_provider(Id,State#state.connect_nodes,State#state.session_deployments) of
+		{error,Reason}->
+		    NewState=State,
+		    {error,Reason};
+		{ok,Id}->
+		    NewState=State#state{session_deployments=lists:keydelete(Id,1,State#state.session_deployments)},
+		    ok
+	    end,
+    {reply, Reply, NewState};
+
 
 handle_call({ping}, _From, State) ->
     Reply = pong,
@@ -267,21 +333,3 @@ format_status(_Opt, Status) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-check_rd_running(_Interval,N_,true)->
-    true;
-check_rd_running(Interval,0,true)->
-    true;
-check_rd_running(Interval,0,false)->
-    false;
-check_rd_running(Interval,N,IsRunning)->
-    case rpc:call(node(),rd,ping,[],5000) of
-	pong->
-	    NewIsRunning=true,
-	    NewN=N;
-	_->
-	    timer:sleep(Interval),
-	    NewIsRunning=false,
-	    NewN=N-1
-    end,
-    check_rd_running(Interval,NewN,NewIsRunning).
-	 

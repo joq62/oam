@@ -26,7 +26,10 @@ start()->
    
     ok=setup(),
     ok=test1(),
+    timer:sleep(2000),
     ok=test2(),
+    timer:sleep(2000),
+    ok=test3(),
     
      
      
@@ -34,6 +37,20 @@ start()->
     io:format("Test OK !!! ~p~n",[?MODULE]),
     timer:sleep(2000),
 %    init:stop(),
+    ok.
+
+%% --------------------------------------------------------------------
+%% Function: available_hosts()
+%% Description: Based on hosts.config file checks which hosts are avaible
+%% Returns: List({HostId,Ip,SshPort,Uid,Pwd}
+%% --------------------------------------------------------------------
+test3()->
+    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
+
+    AllProviders=oam:all_providers(),
+    io:format("AllProviders ~p~n",[{AllProviders,?MODULE,?FUNCTION_NAME,?LINE}]),
+    
+
     ok.
 
 %% --------------------------------------------------------------------
@@ -62,12 +79,10 @@ test2()->
 
     C201AllNodes=oam:all_nodes("c201"),
     io:format("c201AllNodes ~p~n",[{C201AllNodes,?MODULE,?FUNCTION_NAME,?LINE}]),
-
     
     C202AllNodes=oam:all_nodes("c202"),
     io:format("c202AllNodes ~p~n",[{C202AllNodes,?MODULE,?FUNCTION_NAME,?LINE}]),
     
-
     ok.
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
