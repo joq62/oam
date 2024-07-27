@@ -69,6 +69,14 @@ start()->
 %% --------------------------------------------------------------------
 init_test()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
+
+    AllHostNodes=host_server:get_host_nodes(),
+    ['ctrl@c200','ctrl@c201','ctrl@c202','ctrl@c230','ctrl@c50']=lists:sort(AllHostNodes),
+    Pong=[{N,net_adm:ping(N)}||N<-AllHostNodes],
+    ConnectedNodes=[N||{N,pong}<-Pong],
+    NotConnectedNodes=[N||{N,pang}<-Pong],
+ %   io:format("ConnectedNodes ~p~n",[ConnectedNodes]),
+ %   io:format("NotConnectedNodes ~p~n",[NotConnectedNodes]),
     
     {ok,AllFilenames}=application_server:all_filenames(),
     [
@@ -78,17 +86,15 @@ init_test()->
     ]=lists:sort(AllFilenames),
     {ok,"Repo is up to date"}=application_server:update(),
     
-
-    io:format("****************** ~p~n",[{date(),time()}]),      
-    AllHostNodes=lists:sort(host_server:get_host_nodes()),
-    io:format("Hostnodes  ~p~n",[AllHostNodes]),
-    Pong=[{N,net_adm:ping(N)}||N<-AllHostNodes],
-    ConnectedNodes=[N||{N,pong}<-Pong],
-    io:format("Connected nodes ~p~n",[ConnectedNodes]),   
-    NotConnectedNodes=[N||{N,pang}<-Pong],
-    io:format("Not Connected nodes ~p~n",[NotConnectedNodes]),
-    Logs=read_logs(AllHostNodes,[]),
-    io:format("Logs ~p~n",[Logs]),   
+    %% Read ctrl logs
+   % glurk=rpc:call('ctrl@c200',file,get_cwd,[],5000),
+    
+ %   LogFile=filename:join(?ControllerLogDir,?LogFile1),
+ %   LogStrC200=rpc:call('ctrl@c200',os,cmd,["cat "++LogFile],2*5000),
+ %   LC200=string:lexemes(LogStrC200,"\n"),
+ %   [io:format("~p~n",[Str])||Str<-LC200],
+ %   io:format("'ctrl@c200' ~p~n",[rpc:call('ctrl@c50',erlang,nodes,[],5000)]), 
+   
     State=#state{
 	     all_ctrl_nodes=[],
 	     connected=[],
@@ -104,7 +110,7 @@ read_logs([Node|T],Acc)->
     NewAcc=case rpc:call(Node,os,cmd,["cat "++LogFile],2*5000) of
 	       {badrpc,_}->
 		   [{Node,[]}|Acc];
-	       LogStr->
+	        LogStr->
 		   L=string:lexemes(LogStr,"\n"),
 		   [{Node,L}|Acc]
 	   end,
@@ -116,129 +122,59 @@ monitor_loop(State)->
     ConnectedNodes=[N||{N,pong}<-Pong],
     NotConnectedNodes=[N||{N,pang}<-Pong],
     Logs=read_logs(AllHostNodes,[]),
-    StatusAllHostNodes=if 
-			   AllHostNodes=/=State#state.all_ctrl_nodes->
-			       {true,AllHostNodes,{io,format,["Updated AllHostNodes~p~n~n",[AllHostNodes]]}};
-			   true ->
-			       {false,AllHostNodes}
-		       end,
-    StatusConnectedNodes=if 
-			     ConnectedNodes=/=State#state.connected->
-				 {true,
-				  ConnectedNodes,
-				  {io,format,["Updated Connected  ~p~n~n",[ConnectedNodes]]}};
-			     true ->
-				 {false,ConnectedNodes}
-			 end,
-    StatusNotConnectedNodes=if 
-				NotConnectedNodes=/=State#state.not_connected->
-				    {true,
-				     NotConnectedNodes,
-				     {io,format,["Updated Not Connected  ~p~n~n",[NotConnectedNodes]]}};
-				true->
-				    {false,NotConnectedNodes}
-			    end,
-    NodeInfoList=[StatusAllHostNodes,StatusConnectedNodes,StatusNotConnectedNodes],
-    NodeInfoUpdated=[NodeInfo||{true,NodeInfo,Print}<-NodeInfoList],
-    IsNodeInfoUpdated= case NodeInfoUpdated of
-			   []->
-			       false;
-			   _->
-			       true
-		       end,
-     {AreLogsUpdate,UpdatedLogs,DiffLists}=are_logs_updated(Logs,State#state.logs,[]),
-  %  io:format("IsNodeInfoUpdated,AreLogsUpdate ~p~n",[ {IsNodeInfoUpdated,AreLogsUpdate}]),
-    case {IsNodeInfoUpdated,AreLogsUpdate} of
-	{false,false}->
-	    no_action;
-	{false,true} ->
-	    io:format(" ~n"),
-	    io:format("--------------------------- ~p",[{date(),time()}]),
-	    io:format("--------------------------- ~n"),
-	    print(DiffLists);		  	
-	{true,false}->
-	    io:format(" ~n"),
-	    io:format("--------------------------- ~p",[{date(),time()}]),
-	    io:format("--------------------------- ~n"),
-	    [erlang:apply(M,F,A)||{true,NodeInfo,{M,F,A}}<-NodeInfoList];
-	{true,true}->
-	    io:format(" ~n"),
-	    io:format("--------------------------- ~p",[{date(),time()}]),
-	    io:format("--------------------------- ~n"),
-	    [erlang:apply(M,F,A)||{true,NodeInfo,{M,F,A}}<-NodeInfoList],
-	    print(DiffLists)
-    end,
+    NewAllHostNodes=if 
+			AllHostNodes=/=State#state.all_ctrl_nodes->
+			    io:format("Hostnodes changed ~p~n",[AllHostNodes]),
+			    AllHostNodes;
+			true ->
+			    AllHostNodes
+		    end,
+    
+    NewConnectedNodes=if 
+			ConnectedNodes=/=State#state.connected->
+			    io:format("Connected changed ~p~n",[ConnectedNodes]),
+			    ConnectedNodes;
+			true ->
+			    ConnectedNodes
+		    end,    
+    NewNotConnectedNodes=if 
+			NotConnectedNodes=/=State#state.not_connected->
+			    io:format("Not Connected changed ~p~n",[NotConnectedNodes]),
+			    NotConnectedNodes;
+			true ->
+			    NotConnectedNodes
+		    end,  
+    NewLogs=print(Logs,State#state.logs,[]),
+  %  io:format("NewLogs ~p~n",[{NewLogs,?MODULE,?LINE}]),
   NewState=State#state{
-	       all_ctrl_nodes=AllHostNodes,
-	       connected=ConnectedNodes,
-	       not_connected=NotConnectedNodes,
-	       logs=UpdatedLogs}, 
+	       all_ctrl_nodes=NewAllHostNodes,
+	       connected=NewConnectedNodes,
+	       not_connected=NewNotConnectedNodes,
+	       logs=NewLogs}, 
     timer:sleep(10*1000),
     monitor_loop(NewState).
 
-are_logs_updated([],_CurrentLogs,Acc)->
-    UpdatedLogs=[{Node,Logs}||{_,{Node,Logs,_}}<-Acc],
-    DiffLists=[{Node,DiffList}||{true,{Node,_,DiffList}}<-Acc],
-    AreLogsUpdate=case DiffLists of
-		      []->
-			  false;
-		      _->
-			  true
-		  end,
-    {AreLogsUpdate,UpdatedLogs,DiffLists};
-are_logs_updated([{Node,Logs}|T],CurrentLogs,Acc)->
- %   io:format("Node ~p~n",[Node]),
- %   io:format("Logs ~p~n",[Logs]),	    
- %   io:format("CurrentLogs ~p~n",[CurrentLogs]),
-    NewAcc=case lists:keyfind(Node,1,CurrentLogs) of
-	       false->
-		   [{true,{Node,Logs,Logs}}|Acc];
-	       {Node,CurrentNodeLog}->
-		   DiffList=[Log||Log<-Logs,
-				  false=:=lists:member(Log,CurrentNodeLog)],
-		   case DiffList of
-		       []->
-			   [{false,{Node,Logs,[]}}|Acc];
-		       DiffList->
-			   [{true,{Node,Logs,DiffList}}|Acc]
-		       
-		   end
-	   end,
-    are_logs_updated(T,CurrentLogs,NewAcc).
-	 			  
-    
-    
- %   case Node of
-%	ctrl@c200->
-%	    io:format("Node ~p~n",[Node]),
-%	    io:format("Logs ~p~n",[Logs]),	    
-%	    io:format("CurrentLogs ~p~n",[CurrentLogs]),
-%	    io:format("DiffList ~p~n",[DiffList]);
-%	_->
-%	    ok
-    
-
-print([])->
-    ok;
-print([{Node,[]}|T])->
-    print(T);
-print([{Node,DiffList}|T])->
-    io:format("~p~n",[Node]),
-    [io:format("~p~n",[Log])||Log<-DiffList],
-    print(T).
-    
 print([],_CurrentLogs,Acc)->
     Acc;
 print([{Node,Logs}|T],CurrentLogs,Acc)->
-    DiffList=[Log||Log<-Logs,
-		   false=:=lists:member(Log,CurrentLogs)],
-    case DiffList of
-	[]->
-	    no_action;
-	DiffList->
-	    [io:format("~p~n",[Log])||Log<-DiffList]
-    end,
-    print(T,CurrentLogs,[{Node,Logs}|Acc]).    
+    
+    NewAcc=case lists:keyfind(Node,1,CurrentLogs) of
+	       false->
+		   io:format("Node Logs ~p~n",[{Node,Logs}]),
+		   [{Node,Logs}|Acc];
+	       {Node,Logs1} ->
+		   DiffList=[Log||Log<-Logs1,
+				  false=:=lists:member(Log,CurrentLogs)],
+		   case DiffList of
+		       []->
+			   [{Node,Logs1}|Acc];
+		       DiffList->
+			   [io:format("~p~n",[Log])||Log<-DiffList],
+			   [{Node,Logs1}|Acc]
+			 %  lists:keyreplace(Node,1,Acc,{Node,Logs})
+		   end
+	   end,
+    print(T,CurrentLogs,NewAcc).    
 %% --------------------------------------------------------------------
 %% Function: available_hosts()
 %% Description: Based on hosts.config file checks which hosts are avaible

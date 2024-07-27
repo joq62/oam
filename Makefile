@@ -90,4 +90,4 @@ eunit:
 	 -pa _build/default/lib/*/ebin\
 	 -sname oam\
 	 -run $(m) start\
-	 -setcookie a
+	 -setcookie a -hidden
