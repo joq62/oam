@@ -1,0 +1,6 @@
+* monitor log functions
+- read infra logs
+- read application logs
+- print loop infra and application logs
+
+
